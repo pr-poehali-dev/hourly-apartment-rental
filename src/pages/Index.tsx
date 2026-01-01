@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Slider } from '@/components/ui/slider';
+import { useToast } from '@/hooks/use-toast';
 import Icon from '@/components/ui/icon';
 
 interface Apartment {
@@ -28,6 +29,9 @@ const Index = () => {
   const [priceRange, setPriceRange] = useState([500, 5000]);
   const [favorites, setFavorites] = useState<number[]>([]);
   const [hours, setHours] = useState(3);
+  const [customerEmail, setCustomerEmail] = useState('');
+  const [isProcessingPayment, setIsProcessingPayment] = useState(false);
+  const { toast } = useToast();
 
   const apartments: Apartment[] = [
     {
@@ -124,6 +128,66 @@ const Index = () => {
   const calculateTotal = () => {
     if (!selectedApartment) return 0;
     return selectedApartment.price * hours;
+  };
+
+  const handlePayment = async () => {
+    if (!selectedApartment) return;
+    
+    if (!customerEmail) {
+      toast({
+        title: 'Ошибка',
+        description: 'Укажите email для отправки подтверждения',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    setIsProcessingPayment(true);
+
+    try {
+      const response = await fetch('https://functions.poehali.dev/b3465267-cc05-41db-832f-e7be5e4acb1e', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          apartment_id: selectedApartment.id,
+          apartment_title: selectedApartment.title,
+          price: selectedApartment.price,
+          hours: hours,
+          total: calculateTotal(),
+          customer_email: customerEmail
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast({
+          title: '✅ Бронирование успешно!',
+          description: data.test_mode 
+            ? `Тестовый режим: ${data.message}` 
+            : 'Платёж обработан. Детали отправлены на email.',
+        });
+        
+        setSelectedApartment(null);
+        setCustomerEmail('');
+      } else {
+        toast({
+          title: 'Ошибка оплаты',
+          description: data.error || 'Не удалось обработать платёж',
+          variant: 'destructive'
+        });
+      }
+    } catch (error) {
+      toast({
+        title: 'Ошибка сети',
+        description: 'Проверьте интернет-соединение',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsProcessingPayment(false);
+    }
   };
 
   const renderHome = () => (
@@ -548,6 +612,17 @@ const Index = () => {
                       />
                       <div className="text-center font-semibold text-lg">{hours} часов</div>
                     </div>
+
+                    <div>
+                      <label className="text-sm font-medium mb-2 block">Email для подтверждения</label>
+                      <Input 
+                        type="email"
+                        placeholder="your@email.com"
+                        value={customerEmail}
+                        onChange={(e) => setCustomerEmail(e.target.value)}
+                        className="h-12"
+                      />
+                    </div>
                     
                     <div className="flex justify-between items-center text-lg pt-4 border-t-2">
                       <span className="font-semibold">Итого:</span>
@@ -556,9 +631,22 @@ const Index = () => {
                       </span>
                     </div>
                     
-                    <Button className="w-full h-14 text-lg bg-gradient-to-r from-primary to-secondary hover:opacity-90">
-                      <Icon name="CreditCard" className="mr-2" />
-                      Забронировать
+                    <Button 
+                      className="w-full h-14 text-lg bg-gradient-to-r from-primary to-secondary hover:opacity-90"
+                      onClick={handlePayment}
+                      disabled={isProcessingPayment}
+                    >
+                      {isProcessingPayment ? (
+                        <>
+                          <Icon name="Loader2" className="mr-2 animate-spin" />
+                          Обработка...
+                        </>
+                      ) : (
+                        <>
+                          <Icon name="CreditCard" className="mr-2" />
+                          Оплатить {calculateTotal()}₽
+                        </>
+                      )}
                     </Button>
                   </div>
                 </Card>
